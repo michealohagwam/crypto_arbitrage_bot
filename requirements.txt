@@ -1,0 +1,6 @@
+pip freeze > requirements.txt
+binance
+bybit
+requests
+schedule
+tabulate
