@@ -8,6 +8,11 @@ from bybit import bybit
 from tabulate import tabulate
 import requests.exceptions
 import csv
+import ccxt
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(filename='crypto_arbitrage_bot.log', level=logging.INFO,
@@ -24,40 +29,94 @@ def get_env_var(var_name):
 # Fetch API keys from environment variables
 binance_api_key = get_env_var('BINANCE_API_KEY')
 binance_api_secret = get_env_var('BINANCE_API_SECRET')
-bybit_api_key = get_env_var('BYBIT_API_KEY')
-bybit_api_secret = get_env_var('BYBIT_API_SECRET')
+
+# Get API key, secret, and passphrase from environment variables
+api_key = os.getenv('KUCOIN_API_KEY')
+api_secret = os.getenv('KUCOIN_API_SECRET')
+api_passphrase = os.getenv('KUCOIN_API_PASSPHRASE')
 
 # Initialize Binance client
 binance_client = BinanceClient(api_key=binance_api_key, api_secret=binance_api_secret)
 
-# Initialize Bybit client
-bybit_client = bybit(test=False, api_key=bybit_api_key, api_secret=bybit_api_secret)
+# Initialize KuCoin client
+kucoin = ccxt.kucoin({
+    'apiKey': api_key,
+    'secret': api_secret,
+    'password': api_passphrase,
+})
+
+# Fetch account balance
+balance = kucoin.fetch_balance()
+
+# Print only the BTC balance
+btc_balance = balance['total'].get('BTC', 0.0)
+print(f"BTC Balance: {btc_balance}")
+
+# Function to check Binance balance
+def check_balance_binance():
+    try:
+        account_info = binance_client.get_account()
+        balances = account_info['balances']
+        btc_balance = next((item for item in balances if item['asset'] == 'BTC'), None)
+        if btc_balance:
+            print(f"Binance BTC Balance: {btc_balance['free']}")
+            logging.info(f"Binance BTC Balance: {btc_balance['free']}")
+        else:
+            print("No BTC balance found on Binance.")
+            logging.info("No BTC balance found on Binance.")
+    except Exception as e:
+        print(f"Error fetching Binance balance: {e}")
+        logging.error(f"Error fetching Binance balance: {e}")
+        
+# Initialize KuCoin client
+api_key = os.getenv('KUCOIN_API_KEY')
+api_secret = os.getenv('KUCOIN_API_SECRET')
+api_passphrase = os.getenv('KUCOIN_API_PASSPHRASE')
+
+kucoin_client = ccxt.kucoin({
+    'apiKey': api_key,
+    'secret': api_secret,
+    'password': api_passphrase,
+})
+
+def check_balance_kucoin():
+    try:
+        balance = kucoin_client.fetch_balance()
+        btc_balance = balance['total'].get('BTC', 0.0)
+        logging.info(f"KuCoin BTC Balance: {btc_balance}")
+        return btc_balance
+    except Exception as e:
+        logging.error(f"Error fetching KuCoin balance: {e}")
+        return 0.0
+
+# Example usage
+#if __name__ == "__main__":
+ #   btc_balance = check_balance_kucoin()
+  #  print(f"BTC Balance: {btc_balance}")
+    
+# Check balances at startup
+check_balance_kucoin()
+check_balance_binance()
 
 # Function to fetch Binance BTC price
 def get_binance_btc_price():
     try:
         ticker = binance_client.get_symbol_ticker(symbol='BTCUSDT')
         return float(ticker['price'])
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Network error fetching Binance BTC price: {e}")
-        return None
     except Exception as e:
         logging.error(f"Error fetching Binance BTC price: {e}")
         return None
 
-# Function to fetch Bybit BTC price
-def get_bybit_btc_price():
+# Function to fetch KuCoin BTC price
+def get_kucoin_btc_price():
     try:
-        response = bybit_client.Market.Market_symbolInfo(symbol='BTCUSDT').result()
-        return float(response[0]['result'][0]['last_price'])
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Network error fetching Bybit BTC price: {e}")
-        return None
+        ticker = kucoin.fetch_ticker('BTC/USDT')
+        return float(ticker['last'])
     except Exception as e:
-        logging.error(f"Error fetching Bybit BTC price: {e}")
+        logging.error(f"Error fetching KuCoin BTC price: {e}")
         return None
 
-# Function to calculate trading fees for Binance and Bybit (0.1% each)
+# Function to calculate trading fees for Binance and KuCoin (0.1% each)
 def calculate_fees(price, exchange):
     fee_rate = 0.001  # 0.1% fee for each trade
     fee = price * fee_rate
@@ -65,8 +124,8 @@ def calculate_fees(price, exchange):
     return fee
 
 # Function to handle network failure
-def handle_network_failure():
-    logging.error("Network failure detected. Retrying...")
+def handle_network_failure(exchange):
+    logging.error(f"Network failure detected on {exchange}. Retrying...")
     # Implement retry logic or alert mechanism as needed
 
 # Function to handle insufficient funds
@@ -74,45 +133,138 @@ def handle_insufficient_funds(exchange):
     logging.error(f"Insufficient funds on {exchange}. Cannot proceed with the trade.")
     # Implement alert mechanism as needed
 
-# Function to place buy order on Bybit
-def place_bybit_buy_order(quantity):
-    # Implement based on Bybit API documentation
-    pass
+# Function to place sell order on Binance
+def place_binance_sell_order(symbol, quantity, price):
+    try:
+        # Replace these with actual Binance API calls based on their documentation
+        # Example:
+        order = binance_client.create_order(
+            symbol=symbol,
+            side='SELL',
+            type='LIMIT',
+            quantity=quantity,
+            price=price,
+            timeInForce='GTC'  # Good till cancelled
+        )
+        logging.info(f"Sell order placed on Binance: {order}")
+        return order
+    except Exception as e:
+        logging.error(f"Error placing sell order on Binance: {e}")
+        return None
+
+# Function to place stop order on KuCoin
+def place_kucoin_stop_order(symbol, stop_price, quantity, side):
+    try:
+        # Replace these with actual KuCoin API calls based on their documentation
+        params = {
+            'symbol': symbol,
+            'stop': stop_price,
+            'type': 'stop',
+            'size': quantity,
+            'side': side,
+            # Add any additional parameters as required by the KuCoin API
+        }
+        order = kucoin.private_post_orders(params=params)
+        logging.info(f"Stop order placed on KuCoin: {order}")
+        return order
+    except Exception as e:
+        logging.error(f"Error placing stop order on KuCoin: {e}")
+        return None
 
 # Function to place sell order on Binance
-def place_binance_sell_order(quantity):
-    # Implement based on Binance API documentation
-    pass
+def place_binance_sell_order(binance_client, symbol, quantity):
+    try:
+        # Construct the order parameters
+        order_params = {
+            'symbol': symbol,
+            'quantity': quantity,
+            'side': 'SELL',
+            'type': 'MARKET',  # Example: Market order type
+            # Add any additional parameters as required by the Binance API
+        }
+        
+        # Make the API call to place the order
+        order_response = binance_client.create_order(**order_params)
+        
+        # Log the order response
+        logging.info(f"Sell order placed on Binance: {order_response}")
+        
+        return order_response
+    
+    except Exception as e:
+        logging.error(f"Error placing sell order on Binance: {e}")
+        return None
 
-# Function to place buy order on Binance
-def place_binance_buy_order(quantity):
-    # Implement based on Binance API documentation
-    pass
+# Function to place sell order on KuCoin
+def place_kucoin_sell_order(kucoin_client, symbol, quantity):
+    try:
+        # Construct the order parameters
+        order_params = {
+            'symbol': symbol,
+            'size': quantity,
+            'side': 'sell',
+            'type': 'market',  # Example: Market order type
+            # Add any additional parameters as required by the KuCoin API
+        }
+        
+        # Make the API call to place the order
+        order_response = kucoin_client.create_order(**order_params)
+        
+        # Log the order response
+        logging.info(f"Sell order placed on KuCoin: {order_response}")
+        
+        return order_response
+    
+    except Exception as e:
+        logging.error(f"Error placing sell order on KuCoin: {e}")
+        return None
 
-# Function to place sell order on Bybit
-def place_bybit_sell_order(quantity):
-    # Implement based on Bybit API documentation
-    pass
+# Function to calculate profit after fees on Binance or KuCoin
+def calculate_profit(binance_price, kucoin_price, quantity):
+    binance_profit = calculate_profit_binance(binance_price, kucoin_price, quantity)
+    kucoin_profit = calculate_profit_kucoin(binance_price, kucoin_price, quantity)
+    
+    # Compare profits from both exchanges and return the greater profit
+    return max(binance_profit, kucoin_profit)
 
-# Function to calculate profit after fees
-def calculate_profit(binance_price, bybit_price, quantity):
+# Function to calculate profit after fees on Binance
+def calculate_profit_binance(binance_price, kucoin_price, quantity):
     binance_fee = calculate_fees(binance_price, 'Binance')
-    bybit_fee = calculate_fees(bybit_price, 'Bybit')
+    kucoin_fee = calculate_fees(kucoin_price, 'KuCoin')
 
-    if binance_price > bybit_price + bybit_fee:
-        # Buy on Bybit and sell on Binance
-        profit = (binance_price - (bybit_price * (1 + bybit_fee))) * quantity
+    if binance_price > kucoin_price + kucoin_fee:
+        # Buy on KuCoin and sell on Binance
+        profit = (binance_price - (kucoin_price * (1 + kucoin_fee))) * quantity
         return profit
-    elif bybit_price > binance_price + binance_fee:
-        # Buy on Binance and sell on Bybit
-        profit = (bybit_price - (binance_price * (1 + binance_fee))) * quantity
+    elif kucoin_price > binance_price + binance_fee:
+        # Buy on Binance and sell on KuCoin
+        profit = (kucoin_price - (binance_price * (1 + binance_fee))) * quantity
         return profit
     else:
         return 0
 
+# Function to calculate profit after fees on KuCoin
+def calculate_profit_kucoin(binance_price, kucoin_price, quantity):
+    binance_fee = calculate_fees(binance_price, 'Binance')
+    kucoin_fee = calculate_fees(kucoin_price, 'KuCoin')
+
+    if binance_price > kucoin_price + kucoin_fee:
+        # Buy on KuCoin and sell on Binance
+        profit = (binance_price - (kucoin_price * (1 + kucoin_fee))) * quantity
+        return profit
+    elif kucoin_price > binance_price + binance_fee:
+        # Buy on Binance and sell on KuCoin
+        profit = (kucoin_price - (binance_price * (1 + binance_fee))) * quantity
+        return profit
+    else:
+        return 0
+
+
 # Function to calculate position size based on capital and percentage allocation
 def calculate_position_size(capital, allocation_percentage):
-    return capital * allocation_percentage / 100
+    if allocation_percentage < 0 or allocation_percentage > 100:
+        raise ValueError("Allocation percentage should be between 0 and 100.")
+    return capital * (allocation_percentage / 100)
 
 # Function to implement stop-loss mechanism
 def stop_loss_check(current_profit_loss):
@@ -128,20 +280,32 @@ total_profit = 0
 amount_used = 0
 total_losses = 0
 
-# Threshold function to determine arbitrage opportunity
-def is_arbitrage_opportunity(binance_price, bybit_price, threshold=10):
-    difference = abs(binance_price - bybit_price)
+# Initialize KuCoin client
+kucoin_client = ccxt.kucoin()
+
+def get_binance_btc_price():
+    try:
+        ticker = binance_client.get_ticker(symbol='BTCUSDT')  # Use the correct method for fetching the ticker
+        return float(ticker['lastPrice'])
+    except Exception as e:
+        print(f"Error fetching Binance BTC price: {e}")
+        handle_network_failure('Binance')  # Ensure 'Binance' is passed as the argument
+        return None
+
+# Threshold function to determine arbitrage opportunity between Binance and KuCoin
+def is_arbitrage_opportunity(binance_price, kucoin_price, threshold=20):
+    difference = abs(binance_price - kucoin_price)
     if difference >= threshold:
-        logging.info(f'Arbitrage opportunity detected! Binance: ${binance_price}, Bybit: ${bybit_price}, Difference: ${difference:.2f}')
+        logging.info(f'Arbitrage opportunity detected! Binance: ${binance_price}, KuCoin: ${kucoin_price}, Difference: ${difference:.2f}')
         return True
     return False
 
 # Function to log and print results in table format
-def log_and_print_results(binance_price, bybit_price, profit):
+def log_and_print_results(binance_price, kucoin_price, profit):
     global successful_trades, failed_trades, total_profit, amount_used, total_losses
 
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    difference = abs(binance_price - bybit_price)
+    difference = abs(binance_price - kucoin_price)
     if profit >= 0.01:
         result = "Successful"
         successful_trades += 1
@@ -153,21 +317,21 @@ def log_and_print_results(binance_price, bybit_price, profit):
             total_losses += abs(profit)
 
     # Determine recommendation
-    if binance_price > bybit_price:
-        recommendation = 'Buy on Bybit and sell on Binance'
+    if binance_price > kucoin_price:
+        recommendation = 'Buy on Kucoin and sell on Binance'
     else:
-        recommendation = 'Buy on Binance and sell on Bybit'
+        recommendation = 'Buy on Binance and sell on Kucoin'
 
     # Print and log results in table format
     table_data = [
-        ["Time", "Binance BTC/USDT Price", "Bybit BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"],
-        [current_time, f'${binance_price}', f'${bybit_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation]
+        ["Time", "Binance BTC/USDT Price", "Kucoin BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"],
+        [current_time, f'${binance_price}', f'${kucoin_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation]
     ]
     print(tabulate(table_data, headers="firstrow", tablefmt="grid"))
-    logging.info(f'{current_time} - Binance: ${binance_price}, Bybit: ${bybit_price}, Difference: ${difference:.2f}, Profit: ${profit:.2f}, Result: {result}, Recommendation: {recommendation}')
+    logging.info(f'{current_time} - Binance: ${binance_price}, Kucoin: ${kucoin_price}, Difference: ${difference:.2f}, Profit: ${profit:.2f}, Result: {result}, Recommendation: {recommendation}')
 
     # Update amount used (example)
-    amount_used += 100  # Adjust based on your trading logic
+    amount_used += 50  # Adjust based on your trading logic
 
     # Print trade summaries and totals
     print("\nTrade Summaries:")
@@ -179,35 +343,35 @@ def log_and_print_results(binance_price, bybit_price, profit):
     print(f"Total Profit after Fees and Costs: ${total_profit - amount_used:.2f}")
 
     # Save results to logs
-    save_to_daily_log(current_time, binance_price, bybit_price, difference, profit, result, recommendation)
-    save_to_weekly_log(current_time, binance_price, bybit_price, difference, profit, result, recommendation)
-    save_to_monthly_log(current_time, binance_price, bybit_price, difference, profit, result, recommendation)
+    save_to_daily_log(current_time, binance_price, kucoin_price, difference, profit, result, recommendation)
+    save_to_weekly_log(current_time, binance_price, kucoin_price, difference, profit, result, recommendation)
+    save_to_monthly_log(current_time, binance_price, kucoin_price, difference, profit, result, recommendation)
 
 # Function to save results to daily, weekly, and monthly logs
-def save_to_daily_log(current_time, binance_price, bybit_price, difference, profit, result, recommendation):
+def save_to_daily_log(current_time, binance_price, kucoin_price, difference, profit, result, recommendation):
     with open('daily_trades.csv', mode='a', newline='') as file:
         writer = csv.writer(file)
         if file.tell() == 0:  # Check if file is empty to write headers
-            writer.writerow(["Time", "Binance BTC/USDT Price", "Bybit BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"])
-        writer.writerow([current_time, f'${binance_price}', f'${bybit_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation])
+            writer.writerow(["Time", "Binance BTC/USDT Price", "kucoin BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"])
+        writer.writerow([current_time, f'${binance_price}', f'${kucoin_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation])
 
-def save_to_weekly_log(current_time, binance_price, bybit_price, difference, profit, result, recommendation):
+def save_to_weekly_log(current_time, binance_price, kucoin_price, difference, profit, result, recommendation):
     week_number = datetime.now().isocalendar()[1]
     week_file = f'weekly_trades_week_{week_number}.csv'
     with open(week_file, mode='a', newline='') as file:
         writer = csv.writer(file)
         if file.tell() == 0:  # Check if file is empty to write headers
-            writer.writerow(["Time", "Binance BTC/USDT Price", "Bybit BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"])
-        writer.writerow([current_time, f'${binance_price}', f'${bybit_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation])
+            writer.writerow(["Time", "Binance BTC/USDT Price", "Kucoin BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"])
+        writer.writerow([current_time, f'${binance_price}', f'${kucoin_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation])
 
-def save_to_monthly_log(current_time, binance_price, bybit_price, difference, profit, result, recommendation):
+def save_to_monthly_log(current_time, binance_price, kucoin_price, difference, profit, result, recommendation):
     month_year = datetime.now().strftime('%Y-%m')
     month_file = f'monthly_trades_{month_year}.csv'
     with open(month_file, mode='a', newline='') as file:
         writer = csv.writer(file)
         if file.tell() == 0:  # Check if file is empty to write headers
-            writer.writerow(["Time", "Binance BTC/USDT Price", "Bybit BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"])
-        writer.writerow([current_time, f'${binance_price}', f'${bybit_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation])
+            writer.writerow(["Time", "Binance BTC/USDT Price", "Kucoin BTC/USDT Price", "Difference", "Profit", "Result", "Recommendation"])
+        writer.writerow([current_time, f'${binance_price}', f'${kucoin_price}', f'${difference:.2f}', f'${profit:.2f}', result, recommendation])
 
 # Function to calculate total profit for a given log file
 def calculate_totals(log_file):
@@ -256,42 +420,43 @@ def log_totals():
 def execute_arbitrage():
     try:
         binance_price = get_binance_btc_price()
-        bybit_price = get_bybit_btc_price()
+        kucoin_price = get_kucoin_btc_price()
 
-        if binance_price is not None and bybit_price is not None:
+        if binance_price is not None and kucoin_price is not None:
             logging.info(f'Binance BTC/USDT Price: ${binance_price}')
-            logging.info(f'Bybit BTC/USDT Price: ${bybit_price}')
+            logging.info(f'Kucoin BTC/USDT Price: ${kucoin_price}')
 
             # Check if there's an arbitrage opportunity
-            if is_arbitrage_opportunity(binance_price, bybit_price, threshold=10):
+            if is_arbitrage_opportunity(binance_price, kucoin_price, threshold=10):
                 # Calculate profit after fees
-                capital = 10000  # Example capital amount, adjust as needed
-                allocation_percentage = 1  # Allocate 1% of capital per trade
+                capital = 50  # Example capital amount, adjust as needed
+                allocation_percentage = 50  # Allocate 100% of capital per trade
                 quantity = calculate_position_size(capital, allocation_percentage)
-                profit = calculate_profit(binance_price, bybit_price, quantity)
+                profit = calculate_profit(binance_price, kucoin_price, quantity)
 
                 # Check for stop-loss
                 if stop_loss_check(profit):
                     logging.info('Stop-loss triggered! Loss exceeds $5.')
                     return
 
-                # Check for insufficient funds (this is a placeholder and should be implemented based on actual API responses)
+                # Check for insufficient funds (this should be implemented based on actual API responses)
                 if capital < quantity:
-                    handle_insufficient_funds('Binance' if binance_price > bybit_price else 'Bybit')
+                    handle_insufficient_funds('Binance' if binance_price > kucoin_price else 'Kucoin')
                     return
 
                 # Log and print results
-                log_and_print_results(binance_price, bybit_price, profit)
+                log_and_print_results(binance_price, kucoin_price, profit)
 
                 # Save to weekly and monthly logs
-                save_to_weekly_log(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), binance_price, bybit_price, abs(binance_price - bybit_price), profit, "Successful" if profit >= 0.01 else "Failed", 'Buy on Bybit and sell on Binance' if binance_price > bybit_price else 'Buy on Binance and sell on Bybit')
-                save_to_monthly_log(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), binance_price, bybit_price, abs(binance_price - bybit_price), profit, "Successful" if profit >= 0.01 else "Failed", 'Buy on Bybit and sell on Binance' if binance_price > bybit_price else 'Buy on Binance and sell on Bybit')
+                save_to_weekly_log(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), binance_price, kucoin_price, abs(binance_price - kucoin_price), profit, "Successful" if profit >= 0.01 else "Failed", 'Buy on KuCoin and sell on Binance' if binance_price > kucoin_price else 'Buy on Binance and sell on KuCoin')
+                save_to_monthly_log(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), binance_price, kucoin_price, abs(binance_price - kucoin_price), profit, "Successful" if profit >= 0.01 else "Failed", 'Buy on KuCoin and sell on Binance' if binance_price > kucoin_price else 'Buy on Binance and sell on KuCoin')
         else:
             logging.error("Failed to fetch prices from one or both exchanges")
-            handle_network_failure()
+            handle_network_failure('Binance' if binance_price is None else 'KuCoin')
     except Exception as e:
         logging.error(f"Unexpected error in execute_arbitrage: {e}")
-        handle_network_failure()
+        handle_network_failure('Arbitrage Execution')
+
 
 # Function to run the job periodically
 def job():
@@ -299,7 +464,7 @@ def job():
     log_totals()  # Log totals after each execution
 
 # Schedule the job every 1 second (adjust as needed)
-schedule.every(1).seconds.do(job)
+schedule.every(5).seconds.do(job)
 
 def clear_all_logs_and_csv_files():
     # List of log and CSV files to clear
@@ -331,3 +496,5 @@ clear_all_logs_and_csv_files()
 while True:
     schedule.run_pending()
     time.sleep(1)
+
+
