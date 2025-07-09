@@ -166,7 +166,7 @@ def create_flask_app(trader, dry_run):
         <body>
         <nav class="pink accent-3">
             <div class="nav-wrapper container">
-                <a href="#" class="brand-logo">Crypto Arbitrage</a>
+                <a href="/" class="brand-logo">Crypto Arbitrage</a>
             </div>
         </nav>
         <div class="container">
@@ -218,11 +218,30 @@ def create_flask_app(trader, dry_run):
     @login_required
     def dashboard():
         logger.info(f"📊 Dashboard accessed by user: {current_user.username}")
-        metrics = trade_logger.get_metrics()
-        trades = trade_logger.get_trades(since_days=30)
+        
+        # Get metrics and trades with error handling
+        try:
+            metrics = trade_logger.get_metrics()
+            trades = trade_logger.get_trades(since_days=30)
+        except Exception as e:
+            logger.error(f"Error fetching dashboard data: {e}")
+            metrics = {'trade_count': 0, 'total_profit': 0.0, 'avg_profit': 0.0}
+            trades = []
+        
         manual_trade_log = request.args.get('manual_trade_log', None)
         if manual_trade_log:
             manual_trade_log = unquote(manual_trade_log)
+        
+        # Fetch current account balances
+        try:
+            binance_btc_balance = trader.binance.check_balance()
+            binance_usdt_balance = trader.binance.check_usdt_balance()
+            kucoin_btc_balance = trader.kucoin.check_balance()
+            kucoin_usdt_balance = trader.kucoin.check_usdt_balance()
+        except Exception as e:
+            logger.error(f"Error fetching balances: {e}")
+            binance_btc_balance = binance_usdt_balance = kucoin_btc_balance = kucoin_usdt_balance = "Error"
+        
         # Pass API keys to the template (WARNING: this is sensitive info)
         return render_template_string('''
         <!DOCTYPE html>
@@ -241,12 +260,15 @@ def create_flask_app(trader, dry_run):
                 .table-container { overflow-x: auto; }
                 .log-box { background: #fff3e0; border: 1px solid #ff9800; color: #bf360c; padding: 1em; margin-bottom: 1em; border-radius: 6px; font-family: monospace; white-space: pre-wrap; }
                 .sensitive-box { background: #ffebee; border: 1px solid #e57373; color: #b71c1c; padding: 1em; margin-bottom: 1em; border-radius: 6px; font-family: monospace; }
+                .balance-box { background: #e8f5e8; border: 1px solid #4caf50; color: #2e7d32; padding: 1em; margin-bottom: 1em; border-radius: 6px; }
+                .balance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+                .balance-item { background: white; padding: 1em; border-radius: 4px; border-left: 4px solid #4caf50; }
             </style>
         </head>
         <body>
         <nav class="cyan accent-4">
             <div class="nav-wrapper container">
-                <a href="#" class="brand-logo">Crypto Arbitrage</a>
+                <a href="/" class="brand-logo">Crypto Arbitrage</a>
                 <ul id="nav-mobile" class="right hide-on-med-and-down">
                     <li><a href="/logout"><i class="material-icons left">logout</i>Logout</a></li>
                 </ul>
@@ -264,6 +286,21 @@ def create_flask_app(trader, dry_run):
                                 {{ manual_trade_log|safe }}
                             </div>
                             {% endif %}
+                            <div class="balance-box">
+                                <h6 class="green-text text-darken-2"><i class="material-icons left">account_balance_wallet</i>Account Balances</h6>
+                                <div class="balance-grid">
+                                    <div class="balance-item">
+                                        <h6 class="blue-text">Binance</h6>
+                                        <p><b>BTC:</b> {{ binance_btc_balance }}</p>
+                                        <p><b>USDT:</b> ${{ binance_usdt_balance }}</p>
+                                    </div>
+                                    <div class="balance-item">
+                                        <h6 class="orange-text">KuCoin</h6>
+                                        <p><b>BTC:</b> {{ kucoin_btc_balance }}</p>
+                                        <p><b>USDT:</b> ${{ kucoin_usdt_balance }}</p>
+                                    </div>
+                                </div>
+                            </div>
                             <form method="post" action="/run-trade" class="center-align" style="margin-bottom: 2em;">
                                 <button class="btn-large waves-effect waves-light pink accent-3" type="submit">
                                     <i class="material-icons left">autorenew</i>Run Arbitrage Check
@@ -309,7 +346,9 @@ def create_flask_app(trader, dry_run):
         </body>
         </html>
         ''', metrics=metrics, trades=trades, manual_trade_log=manual_trade_log,
-        binance_api_key=BINANCE_API_KEY, kucoin_api_key=KUCOIN_API_KEY, kucoin_passphrase=KUCOIN_API_PASSPHRASE)
+        binance_api_key=BINANCE_API_KEY, kucoin_api_key=KUCOIN_API_KEY, kucoin_passphrase=KUCOIN_API_PASSPHRASE,
+        binance_btc_balance=binance_btc_balance, binance_usdt_balance=binance_usdt_balance,
+        kucoin_btc_balance=kucoin_btc_balance, kucoin_usdt_balance=kucoin_usdt_balance)
 
     @app.route('/run-trade', methods=['POST'])
     @login_required

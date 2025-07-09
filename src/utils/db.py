@@ -3,7 +3,12 @@ from datetime import datetime, timedelta
 import os
 import shutil
 
-DB_DIR = os.path.join(os.path.dirname(__file__), '../../db')
+# Use appropriate database directory for Docker vs local development
+if os.path.exists('/app'):  # Docker environment
+    DB_DIR = '/app/db'
+else:  # Local development
+    DB_DIR = os.path.join(os.path.dirname(__file__), '../../db')
+
 if not os.path.exists(DB_DIR):
     os.makedirs(DB_DIR)
 

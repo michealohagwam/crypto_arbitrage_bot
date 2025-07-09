@@ -51,19 +51,28 @@ class PositionManager:
 
     @staticmethod
     def calculate_profit(binance_price, kucoin_price, quantity):
-        binance_fee = PositionManager.calculate_fees(binance_price, 'Binance')
-        kucoin_fee = PositionManager.calculate_fees(kucoin_price, 'KuCoin')
-        
         if binance_price > kucoin_price:
             # Binance is more expensive: Buy on KuCoin, Sell on Binance
-            buy_price = kucoin_price * (1 + kucoin_fee)  # Buy on KuCoin with fees
-            sell_price = binance_price * (1 - binance_fee)  # Sell on Binance with fees
-            profit = (sell_price - buy_price) * quantity
+            buy_amount = kucoin_price * quantity
+            buy_fee = buy_amount * 0.001  # 0.1% fee
+            total_buy_cost = buy_amount + buy_fee
+            
+            sell_amount = binance_price * quantity
+            sell_fee = sell_amount * 0.001  # 0.1% fee
+            total_sell_revenue = sell_amount - sell_fee
+            
+            profit = total_sell_revenue - total_buy_cost
         else:
             # KuCoin is more expensive: Buy on Binance, Sell on KuCoin
-            buy_price = binance_price * (1 + binance_fee)  # Buy on Binance with fees
-            sell_price = kucoin_price * (1 - kucoin_fee)  # Sell on KuCoin with fees
-            profit = (sell_price - buy_price) * quantity
+            buy_amount = binance_price * quantity
+            buy_fee = buy_amount * 0.001  # 0.1% fee
+            total_buy_cost = buy_amount + buy_fee
+            
+            sell_amount = kucoin_price * quantity
+            sell_fee = sell_amount * 0.001  # 0.1% fee
+            total_sell_revenue = sell_amount - sell_fee
+            
+            profit = total_sell_revenue - total_buy_cost
             
         return profit
 

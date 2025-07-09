@@ -45,8 +45,8 @@ class TradeLogger:
         ]]
         print(tabulate(table_data, headers="firstrow", tablefmt="grid"))
 
-        if not dry_run:
-            self.db.insert_trade(*data)
+        # Log ALL trades to database (both dry run and real)
+        self.db.insert_trade(*data)
         if return_data:
             return table_data[1]
 

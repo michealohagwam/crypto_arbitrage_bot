@@ -79,12 +79,40 @@ class ArbitrageTrader:
             # Check for arbitrage opportunity
             if self.check_arbitrage_opportunity(binance_price, kucoin_price):
                 logger.info("💰 Calculating position size and potential profit...")
-                quantity = self.position_manager.calculate_position_size()
+                usd_amount = self.position_manager.calculate_position_size()
+                # Convert USD amount to BTC quantity using average price
+                avg_price = (binance_price + kucoin_price) / 2
+                quantity = usd_amount / avg_price
                 profit = self.position_manager.calculate_profit(
                     binance_price, kucoin_price, quantity)
                 
-                logger.info(f"   Position Size: {quantity} BTC")
+                logger.info(f"   USD Amount: ${usd_amount}")
+                logger.info(f"   Average BTC Price: ${avg_price:.2f}")
+                logger.info(f"   Position Size: {quantity:.8f} BTC")
                 logger.info(f"   Potential Profit: ${profit:.2f}")
+
+                # Calculate and display fee information
+                binance_fee_rate = 0.001  # 0.1%
+                kucoin_fee_rate = 0.001   # 0.1%
+                
+                if binance_price > kucoin_price:
+                    logger.info("📈 Strategy: Buy on KuCoin, Sell on Binance")
+                    logger.info("💸 Fee Breakdown:")
+                    logger.info(f"   Buy on KuCoin: {quantity} BTC × ${kucoin_price} = ${quantity * kucoin_price:.2f}")
+                    logger.info(f"   KuCoin Buy Fee: ${quantity * kucoin_price * kucoin_fee_rate:.2f} ({kucoin_fee_rate*100}%)")
+                    logger.info(f"   Sell on Binance: {quantity} BTC × ${binance_price} = ${quantity * binance_price:.2f}")
+                    logger.info(f"   Binance Sell Fee: ${quantity * binance_price * binance_fee_rate:.2f} ({binance_fee_rate*100}%)")
+                    logger.info(f"   Total Fees: ${quantity * kucoin_price * kucoin_fee_rate + quantity * binance_price * binance_fee_rate:.2f}")
+                    logger.info(f"   Net Profit After Fees: ${profit:.2f}")
+                else:
+                    logger.info("📉 Strategy: Buy on Binance, Sell on KuCoin")
+                    logger.info("💸 Fee Breakdown:")
+                    logger.info(f"   Buy on Binance: {quantity} BTC × ${binance_price} = ${quantity * binance_price:.2f}")
+                    logger.info(f"   Binance Buy Fee: ${quantity * binance_price * binance_fee_rate:.2f} ({binance_fee_rate*100}%)")
+                    logger.info(f"   Sell on KuCoin: {quantity} BTC × ${kucoin_price} = ${quantity * kucoin_price:.2f}")
+                    logger.info(f"   KuCoin Sell Fee: ${quantity * kucoin_price * kucoin_fee_rate:.2f} ({kucoin_fee_rate*100}%)")
+                    logger.info(f"   Total Fees: ${quantity * binance_price * binance_fee_rate + quantity * kucoin_price * kucoin_fee_rate:.2f}")
+                    logger.info(f"   Net Profit After Fees: ${profit:.2f}")
 
                 if self.position_manager.check_stop_loss(profit):
                     logger.warning(f"🛑 Stop-loss triggered! Profit: ${profit:.2f}")
@@ -112,10 +140,22 @@ class ArbitrageTrader:
                     
                     if not dry_run:
                         logger.info("🚀 Executing trades...")
-                        buy_result = self.kucoin.place_buy_order('BTC/USDT', quantity)
-                        sell_result = self.binance.place_sell_order('BTCUSDT', quantity)
-                        logger.info(f"   Buy on KuCoin: {buy_result}")
-                        logger.info(f"   Sell on Binance: {sell_result}")
+                        try:
+                            buy_result = self.kucoin.place_buy_order('BTC/USDT', quantity)
+                            if buy_result is None:
+                                logger.error("❌ Failed to place buy order on KuCoin")
+                                return None if return_data else None
+                            
+                            sell_result = self.binance.place_sell_order('BTCUSDT', quantity)
+                            if sell_result is None:
+                                logger.error("❌ Failed to place sell order on Binance")
+                                return None if return_data else None
+                            
+                            logger.info(f"   Buy on KuCoin: {buy_result}")
+                            logger.info(f"   Sell on Binance: {sell_result}")
+                        except Exception as e:
+                            logger.error(f"❌ Error executing trades: {e}")
+                            return None if return_data else None
                     else:
                         logger.info("🧪 [DRY RUN] Simulated buy on KuCoin and sell on Binance")
                 else:
@@ -139,10 +179,22 @@ class ArbitrageTrader:
                     
                     if not dry_run:
                         logger.info("🚀 Executing trades...")
-                        buy_result = self.binance.place_buy_order('BTCUSDT', quantity)
-                        sell_result = self.kucoin.place_sell_order('BTC/USDT', quantity)
-                        logger.info(f"   Buy on Binance: {buy_result}")
-                        logger.info(f"   Sell on KuCoin: {sell_result}")
+                        try:
+                            buy_result = self.binance.place_buy_order('BTCUSDT', quantity)
+                            if buy_result is None:
+                                logger.error("❌ Failed to place buy order on Binance")
+                                return None if return_data else None
+                            
+                            sell_result = self.kucoin.place_sell_order('BTC/USDT', quantity)
+                            if sell_result is None:
+                                logger.error("❌ Failed to place sell order on KuCoin")
+                                return None if return_data else None
+                            
+                            logger.info(f"   Buy on Binance: {buy_result}")
+                            logger.info(f"   Sell on KuCoin: {sell_result}")
+                        except Exception as e:
+                            logger.error(f"❌ Error executing trades: {e}")
+                            return None if return_data else None
                     else:
                         logger.info("🧪 [DRY RUN] Simulated buy on Binance and sell on KuCoin")
 
@@ -157,6 +209,7 @@ class ArbitrageTrader:
                     return trade_data
             else:
                 logger.info("⏳ No arbitrage opportunity found, skipping trade execution")
+                logger.info("💡 Tip: Consider increasing ARBITRAGE_THRESHOLD if fees are eating into profits")
                 
         except Exception as e:
             logger.error(f"💥 Error in execute_trade: {e}")
