@@ -134,23 +134,23 @@ def handle_insufficient_funds(exchange):
     # Implement alert mechanism as needed
 
 # Function to place sell order on Binance
-def place_binance_sell_order(symbol, quantity, price):
-    try:
-        # Replace these with actual Binance API calls based on their documentation
-        # Example:
-        order = binance_client.create_order(
-            symbol=symbol,
-            side='SELL',
-            type='LIMIT',
-            quantity=quantity,
-            price=price,
-            timeInForce='GTC'  # Good till cancelled
-        )
-        logging.info(f"Sell order placed on Binance: {order}")
-        return order
-    except Exception as e:
-        logging.error(f"Error placing sell order on Binance: {e}")
-        return None
+# def place_binance_sell_order(symbol, quantity, price):
+#     try:
+#         # Replace these with actual Binance API calls based on their documentation
+#         # Example:
+#         order = binance_client.create_order(
+#             symbol=symbol,
+#             side='SELL',
+#             type='LIMIT',
+#             quantity=quantity,
+#             price=price,
+#             timeInForce='GTC'  # Good till cancelled
+#         )
+#         logging.info(f"Sell order placed on Binance: {order}")
+#         return order
+#     except Exception as e:
+#         logging.error(f"Error placing sell order on Binance: {e}")
+#         return None
 
 # Function to place stop order on KuCoin
 def place_kucoin_stop_order(symbol, stop_price, quantity, side):

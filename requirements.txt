@@ -1,6 +1,11 @@
-pip freeze > requirements.txt
-binance
-bybit
-requests
-schedule
+python-binance
+ccxt
+python-dotenv
 tabulate
+schedule
+Flask
+Flask-Login
+werkzeug
+requests
+gunicorn
+# sqlite3 is part of the Python standard library
